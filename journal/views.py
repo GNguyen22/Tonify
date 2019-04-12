@@ -7,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 import json
 import requests
 import operator
+import sqlite3
 # Create your views here.
 
 def index(request):
@@ -21,14 +22,62 @@ def getAuthToken():
 def returnPlaylist(request):
    print(request.method)
    print(request.POST)
+   profile = sqlite3.connect('personalization.db')
+   c = profile.cursor()
    if (request.method == 'POST'):
+
+      print(request.POST)
       text = request.POST['input']
+      userName = request.POST['userName']
+      c.execute("SELECT favorite_genre from profile WHERE name = ?", (userName,))
+      genre = (c.fetchone())[0]
+      #print("here and then genre")
+      print(genre)
       auth_token = getAuthToken()
       sentiment_values = analyzeTone(text)
-      playlist = generatePlaylist(sentiment_values, auth_token)
+      playlist = generatePlaylist(sentiment_values, auth_token, genre)
       return JsonResponse(playlist)
    else:
       return HttpResponse("Incorrect http method", status=405);
+
+def storeUser(request):
+   print(request.method)
+   print(request.POST)
+   profile = sqlite3.connect('personalization.db')
+   c = profile.cursor()
+   if (request.method == 'POST'):
+      print(request.POST)
+      userName = request.POST['input']
+      c.execute("SELECT * from profile WHERE name = ?", (userName,))
+      existingUN = c.fetchone()
+      if existingUN is None: # does not exist
+         c.execute("INSERT INTO profile (name, email, favorite_genre) VALUES('%s', 'test@gmail.com', 'Pop')" % userName)
+      else: # already exists
+         pass
+      profile.commit()
+      profile.close()
+      return JsonResponse({})
+   else:
+      return HttpResponse("Incorrect http method", status=405);
+
+def storeGenre(request):
+   print(request.method)
+   print(request.POST)
+   profile = sqlite3.connect('personalization.db')
+   c = profile.cursor()
+   if (request.method == 'POST'):
+      print(request.POST)
+      genre = request.POST['input']
+      userName = request.POST['userName']
+      print(genre)
+      print(userName)
+      c.execute("UPDATE profile SET favorite_genre = ? WHERE name = ?", (genre, userName,))
+      profile.commit()
+      profile.close()
+      return JsonResponse({})
+   else:
+      return HttpResponse("Incorrect http method", status=405);
+
 
 def analyzeTone(text):
    url = "https://gateway.watsonplatform.net/natural-language-understanding/api/v1/analyze"
@@ -69,14 +118,31 @@ def song_seed(emotion):
       seed = "2z3htsNRuhDN923ITatc56"
    return seed
 
-def generatePlaylist(sentiment_values, auth_token):
+def generatePlaylist(sentiment_values, auth_token, genre):
    valence = sentiment_values["joy"]
    top = top_emotion(sentiment_values)
    seed_artist = artist_seed(top)
    seed_song = song_seed(top)
+   #loudness, dancability, energy, acoustics, valence
+   anger_mood = [0.0, 0.20, 0.80, 0.20, 0.20]
+   fear_mood = [-30.0, 0.20, 0.20, 0.20, 0.20]
+   joy_mood = [0.0, 0.80, 0.80, 0.20, 0.80]
+   sadness_mood = [-30.0, 0.20, 0.20, 0.80, 0.20]
+   cur_mood = []
+   if top == "anger":
+      cur_mood = anger_mood[:]
+   elif top == "fear":
+      cur_mood = fear_mood[:]
+   elif top == "joy":
+      cur_mood = joy_mood[:]
+   elif top == "sadness":
+      cur_mood = sadness_mood[:]
 
    url = "https://api.spotify.com/v1/recommendations"
-   params = {"min_energy" : valence,"max_mode" : "5", "market" : "US", "min_danceability" : valence, "seed_tracks" : seed_song , "seed_artists" : seed_artist , "target_popularity" : "30", "min_valence" : valence, }
+   #params = {"min_energy" : valence,"max_mode" : "5", "market" : "US", "min_danceability" : valence, "seed_tracks" : seed_song , "seed_artists" : seed_artist , "target_popularity" : "30", "min_valence" : valence, "seed_genre" : genre, }
+   genre = genre.lower()
+   #params = {"seed_tracks" : seed_song , "seed_artists" : seed_artist , "seed_genres" : genre, }
+   params = {"target_loudness" : cur_mood[0], "target_danceability" : cur_mood[1], "target_energy" : cur_mood[2], "target_acousticness" : cur_mood[3], "target_valence" : cur_mood[4], "seed_genres" : genre, }
    headers = {"Authorization": "Bearer " + auth_token}
 
    print(headers)

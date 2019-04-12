@@ -1,5 +1,10 @@
 $(document).ready(function() {
-
+   $("#login-submit").on("submit", function(e) {
+      e.preventDefault();
+      var userNameArea = $('input#userNameInput');
+      var userName = userNameArea.val();
+      console.log(userName);
+    });
     $("#form-submit").on("submit", function(e) {
         e.preventDefault();
 
